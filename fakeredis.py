@@ -231,33 +231,17 @@ class FakeStrictRedis(object):
     __contains__ = exists
 
     def expire(self, name, time):
-        return self._expire(name, time)
-
-    def pexpire(self, name, millis):
-        return self._expire(name, millis, 1000)
-
-    def _expire(self, name, time, multiplier=1):
         if isinstance(time, timedelta):
-            time = int(timedelta_total_seconds(time) * multiplier)
-        if not isinstance(time, int):
-            raise redis.ResponseError("value is not an integer or out of "
-                                      "range.")
+            time = int(timedelta_total_seconds(time))
         if self.exists(name):
-            self._db.expire(name, datetime.now() +
-                            timedelta(seconds=time / float(multiplier)))
+            self._db.expire(name, datetime.now() + timedelta(seconds=time))
             return True
         else:
             return False
 
     def expireat(self, name, when):
-        return self._expireat(name, when)
-
-    def pexpireat(self, name, when):
-        return self._expireat(name, when, 1000)
-
-    def _expireat(self, name, when, multiplier=1):
         if not isinstance(when, datetime):
-            when = datetime.fromtimestamp(when / float(multiplier))
+            when = datetime.fromtimestamp(when)
         if self.exists(name):
             self._db.expire(name, when)
             return True
@@ -395,23 +379,11 @@ class FakeStrictRedis(object):
     def set(self, name, value, ex=None, px=None, nx=False, xx=False):
         if (not nx and not xx) or (nx and self._db.get(name, None) is None) \
                 or (xx and not self._db.get(name, None) is None):
-            if ex is not None:
-                if isinstance(ex, timedelta):
-                    ex = ex.seconds + ex.days * 24 * 3600
-                if ex < 0:
-                    raise ResponseError('invalid expire time in SETEX')
-                if ex > 0:
-                    self._db.expire(name, datetime.now() +
-                                    timedelta(seconds=ex))
-            elif px is not None:
-                if isinstance(px, timedelta):
-                    ms = int(px.microseconds / 1000)
-                    px = (px.seconds + px.days * 24 * 3600) * 1000 + ms
-                if px < 0:
-                    raise ResponseError('invalid expire time in SETEX')
-                if px > 0:
-                    self._db.expire(name, datetime.now() +
-                                    timedelta(milliseconds=px))
+            if ex is not None and ex > 0:
+                self._db.expire(name, datetime.now() + timedelta(seconds=ex))
+            elif px is not None and px > 0:
+                self._db.expire(name, datetime.now() +
+                                timedelta(milliseconds=px))
             self._db[name] = to_bytes(value)
             return True
         else:
@@ -496,9 +468,9 @@ class FakeStrictRedis(object):
         if now > exp_time:
             return None
         else:
-            return long(round(((exp_time - now).days * 3600 * 24 +
-                        (exp_time - now).seconds +
-                        (exp_time - now).microseconds / 1E6) * multiplier))
+            return round(((exp_time - now).days * 3600 * 24
+                          + (exp_time - now).seconds
+                          + (exp_time - now).microseconds / 1E6) * multiplier)
 
     def type(self, name):
         key = self._db.get(name)
@@ -1447,11 +1419,11 @@ class FakeStrictRedis(object):
                     continue
         raise redis.WatchError('Could not run transaction after 5 tries')
 
-    def pubsub(self):
+    def pubsub(self, ignore_subscribe_messages=False):
         """
         Returns a new FakePubSub instance
         """
-        ps = FakePubSub()
+        ps = FakePubSub(ignore_subscribe_messages=ignore_subscribe_messages)
         self._pubsubs.append(ps)
 
         return ps
